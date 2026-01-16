@@ -43,12 +43,26 @@ const createBook = async (req, res) => {
       return res.status(400).json({ message: 'Name and SSN are required' });
     }
 
+    // 1️⃣ Insert book
     const result = await pool.query(
       'INSERT INTO books (name, name_urdu, ssn, is_visible) VALUES ($1, $2, $3, true) RETURNING *',
       [name, name_urdu || null, ssn]
     );
 
-    res.status(201).json(result.rows[0]);
+    const newBook = result.rows[0];
+
+    // 2️⃣ Insert initial stock for this book
+    await pool.query(
+      `INSERT INTO book_stock (
+        book_id, year, total_stock_new, available_stock_new,
+        total_stock_old, available_stock_old,
+        buy_price_new, sell_price_new, buy_price_old, sell_price_old
+      ) VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0)`,
+      [newBook.id, new Date().getFullYear()]
+    );
+
+    res.status(201).json(newBook);
+
   } catch (error) {
     if (error.code === '23505') {
       return res.status(400).json({ message: 'Book with this SSN already exists' });
@@ -57,6 +71,7 @@ const createBook = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 const getBooks = async (req, res) => {
   try {
