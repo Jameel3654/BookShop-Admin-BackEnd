@@ -5,6 +5,6 @@ const router = express.Router();
 
 router.get('/stock', authMiddleware, exportStock);
 router.get('/sales', authMiddleware, exportSales);
-router.get('/finance', authMiddleware, exportFinance);
+// router.get('/finance', authMiddleware, exportFinance);
 
 module.exports = router;
