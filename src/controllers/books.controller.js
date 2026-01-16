@@ -105,23 +105,19 @@ const updateBookVisibility = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-// Admin fetch for dashboard / stock dropdown
-const getAdminBooks = async (req, res) => {
+const getBooksAdmin = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT bs.id AS stock_id, b.id AS book_id, b.name, b.name_urdu,
-             bs.available_stock_new, bs.available_stock_old
-      FROM book_stock bs
-      JOIN books b ON bs.book_id = b.id
-      WHERE bs.available_stock_new + bs.available_stock_old >= 0
-      ORDER BY b.name
+      SELECT b.*, bs.id AS stock_id, bs.available_stock_new, bs.available_stock_old
+      FROM books b
+      LEFT JOIN book_stock bs ON b.id = bs.book_id
+      ORDER BY b.created_at DESC
     `);
     res.json(result.rows);
   } catch (error) {
-    console.error('Admin books fetch error:', error);
+    console.error('Get admin books error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-
-module.exports = { createBook, getBooks, getPublicBooks, updateBookVisibility, getAdminBooks };
+module.exports = { createBook, getBooksAdmin, getPublicBooks, updateBookVisibility };
