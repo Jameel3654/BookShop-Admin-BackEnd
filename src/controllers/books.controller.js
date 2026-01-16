@@ -120,4 +120,5 @@ const getBooksAdmin = async (req, res) => {
   }
 };
 
-module.exports = { createBook, getBooksAdmin, getPublicBooks, updateBookVisibility };
+module.exports = { createBook, getBooks, getBooksAdmin, getPublicBooks, updateBookVisibility };
+
