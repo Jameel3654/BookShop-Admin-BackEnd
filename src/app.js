@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-
+const moneyRoutes = require('./routes/money.routes');
 const authRoutes = require('./routes/auth.routes');
 const booksRoutes = require('./routes/books.routes');
 const stockRoutes = require('./routes/stock.routes');
@@ -17,6 +17,7 @@ app.use('/api/books', booksRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/money', moneyRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Book Inventory API' });
