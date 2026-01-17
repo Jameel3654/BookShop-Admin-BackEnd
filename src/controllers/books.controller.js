@@ -36,42 +36,53 @@ const getPublicBooks = async (req, res) => {
 
 // Admin endpoints (require auth)
 const createBook = async (req, res) => {
+  const client = await pool.connect();
+  
   try {
+    await client.query('BEGIN');
+    
     const { name, name_urdu, ssn } = req.body;
 
     if (!name || !ssn) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Name and SSN are required' });
     }
 
-    // 1️⃣ Insert book
-    const result = await pool.query(
+    // Insert book
+    const bookResult = await client.query(
       'INSERT INTO books (name, name_urdu, ssn, is_visible) VALUES ($1, $2, $3, true) RETURNING *',
       [name, name_urdu || null, ssn]
     );
 
-    const newBook = result.rows[0];
+    const newBook = bookResult.rows[0];
+    const currentYear = new Date().getFullYear().toString();
 
-    // 2️⃣ Insert initial stock for this book
-    await pool.query(
+    // Create initial stock record with proper defaults
+    await client.query(
       `INSERT INTO book_stock (
-        book_id, year, total_stock_new, available_stock_new,
-        total_stock_old, available_stock_old,
-        buy_price_new, sell_price_new, buy_price_old, sell_price_old
+        book_id, year, 
+        buy_price_new, sell_price_new, 
+        buy_price_old, sell_price_old,
+        total_stock_new, available_stock_new,
+        total_stock_old, available_stock_old
       ) VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0)`,
-      [newBook.id, new Date().getFullYear()]
+      [newBook.id, currentYear]
     );
 
+    await client.query('COMMIT');
     res.status(201).json(newBook);
 
   } catch (error) {
+    await client.query('ROLLBACK');
     if (error.code === '23505') {
       return res.status(400).json({ message: 'Book with this SSN already exists' });
     }
     console.error('Create book error:', error);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
   }
 };
-
 
 const getBooks = async (req, res) => {
   try {
