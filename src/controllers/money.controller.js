@@ -1,3 +1,5 @@
+const pool = require('../config/db');
+
 const addMoney = async (req, res) => {
   try {
     const { description, amount, type } = req.body;

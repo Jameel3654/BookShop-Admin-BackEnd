@@ -91,4 +91,5 @@ const getStockYears = async (req, res) => {
   }
 };
 
+// Don't forget to export it!
 module.exports = { addStock, getAllStock, getStockYears };
