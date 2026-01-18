@@ -90,6 +90,68 @@ const getStockYears = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+// Add to existing file
 
-// Don't forget to export it!
-module.exports = { addStock, getAllStock, getStockYears };
+const updateStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      year, 
+      buy_price_new, sell_price_new, 
+      buy_price_old, sell_price_old,
+      total_stock_new, available_stock_new,
+      total_stock_old, available_stock_old
+    } = req.body;
+
+    const result = await pool.query(
+      `UPDATE book_stock 
+       SET year = $1,
+           buy_price_new = $2, sell_price_new = $3,
+           buy_price_old = $4, sell_price_old = $5,
+           total_stock_new = $6, available_stock_new = $7,
+           total_stock_old = $8, available_stock_old = $9
+       WHERE id = $10 
+       RETURNING *`,
+      [year, buy_price_new, sell_price_new, buy_price_old, sell_price_old,
+       total_stock_new, available_stock_new, total_stock_old, available_stock_old, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Stock not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Update stock error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const deleteStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM book_stock WHERE id = $1 RETURNING *',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Stock not found' });
+    }
+
+    res.json({ message: 'Stock deleted successfully' });
+  } catch (error) {
+    console.error('Delete stock error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Update exports at bottom
+module.exports = { 
+  addStock, 
+  getAllStock, 
+  getStockYears,
+  updateStock,
+  deleteStock
+};

@@ -1,13 +1,19 @@
 const pool = require('../config/db');
 
-// Public endpoint - no auth required
+// Public endpoint - with prices
 const getPublicBooks = async (req, res) => {
   try {
     const { search } = req.query;
     
     let query = `
-      SELECT b.*, 
-             COALESCE(SUM(bs.available_stock_new + bs.available_stock_old), 0) as total_available
+      SELECT 
+        b.*,
+        COALESCE(SUM(bs.available_stock_new + bs.available_stock_old), 0) as total_available,
+        MIN(CASE WHEN bs.available_stock_new > 0 THEN bs.sell_price_new END) as min_price_new,
+        MAX(CASE WHEN bs.available_stock_new > 0 THEN bs.sell_price_new END) as max_price_new,
+        MIN(CASE WHEN bs.available_stock_old > 0 THEN bs.sell_price_old END) as min_price_old,
+        MAX(CASE WHEN bs.available_stock_old > 0 THEN bs.sell_price_old END) as max_price_old,
+        STRING_AGG(DISTINCT bs.year, ', ' ORDER BY bs.year DESC) as available_years
       FROM books b
       LEFT JOIN book_stock bs ON b.id = bs.book_id
       WHERE b.is_visible = true
@@ -34,7 +40,6 @@ const getPublicBooks = async (req, res) => {
   }
 };
 
-// Admin endpoints (require auth)
 const createBook = async (req, res) => {
   const client = await pool.connect();
   
@@ -48,7 +53,6 @@ const createBook = async (req, res) => {
       return res.status(400).json({ message: 'Name and SSN are required' });
     }
 
-    // Insert book
     const bookResult = await client.query(
       'INSERT INTO books (name, name_urdu, ssn, is_visible) VALUES ($1, $2, $3, true) RETURNING *',
       [name, name_urdu || null, ssn]
@@ -57,7 +61,6 @@ const createBook = async (req, res) => {
     const newBook = bookResult.rows[0];
     const currentYear = new Date().getFullYear().toString();
 
-    // Create initial stock record with proper defaults
     await client.query(
       `INSERT INTO book_stock (
         book_id, year, 
@@ -96,6 +99,54 @@ const getBooks = async (req, res) => {
   }
 };
 
+const updateBook = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, name_urdu, ssn } = req.body;
+
+    if (!name || !ssn) {
+      return res.status(400).json({ message: 'Name and SSN are required' });
+    }
+
+    const result = await pool.query(
+      'UPDATE books SET name = $1, name_urdu = $2, ssn = $3 WHERE id = $4 RETURNING *',
+      [name, name_urdu || null, ssn, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Book not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(400).json({ message: 'Book with this SSN already exists' });
+    }
+    console.error('Update book error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const deleteBook = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'DELETE FROM books WHERE id = $1 RETURNING *',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Book not found' });
+    }
+
+    res.json({ message: 'Book deleted successfully' });
+  } catch (error) {
+    console.error('Delete book error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const updateBookVisibility = async (req, res) => {
   try {
     const { id } = req.params;
@@ -116,20 +167,12 @@ const updateBookVisibility = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
-const getBooksAdmin = async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT b.*, bs.id AS stock_id, bs.available_stock_new, bs.available_stock_old
-      FROM books b
-      LEFT JOIN book_stock bs ON b.id = bs.book_id
-      ORDER BY b.created_at DESC
-    `);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Get admin books error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
+
+module.exports = { 
+  createBook, 
+  getBooks, 
+  getPublicBooks, 
+  updateBookVisibility,
+  updateBook,
+  deleteBook
 };
-
-module.exports = { createBook, getBooks, getBooksAdmin, getPublicBooks, updateBookVisibility };
-

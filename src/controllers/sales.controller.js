@@ -109,7 +109,112 @@ const getFinanceReport = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+// Add to existing file
 
-module.exports = { createSale, getSales, getFinanceReport };
+const updateSale = async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
 
-// module.exports = { createSale, getSales };
+    const { id } = req.params;
+    const { 
+      quantity_sold, 
+      amount_received, 
+      payment_method, 
+      sell_location 
+    } = req.body;
+
+    const currentSale = await client.query('SELECT * FROM sales WHERE id = $1', [id]);
+
+    if (currentSale.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Sale not found' });
+    }
+
+    const sale = currentSale.rows[0];
+    const stockResult = await client.query('SELECT * FROM book_stock WHERE id = $1', [sale.stock_id]);
+    const stock = stockResult.rows[0];
+    const isNew = sale.book_condition === 'NEW';
+    const sellPrice = isNew ? stock.sell_price_new : stock.sell_price_old;
+    const buyPrice = isNew ? stock.buy_price_new : stock.buy_price_old;
+
+    if (quantity_sold !== sale.quantity_sold) {
+      const quantityDiff = quantity_sold - sale.quantity_sold;
+      const stockField = isNew ? 'available_stock_new' : 'available_stock_old';
+      
+      await client.query(
+        `UPDATE book_stock SET ${stockField} = ${stockField} - $1 WHERE id = $2`,
+        [quantityDiff, sale.stock_id]
+      );
+    }
+
+    const total_bill = sellPrice * quantity_sold;
+    const profit = (sellPrice - buyPrice) * quantity_sold;
+    const received = amount_received || 0;
+    const payment_status = received >= total_bill ? 'RECEIVED' : 'PENDING';
+
+    const saleResult = await client.query(
+      `UPDATE sales 
+       SET quantity_sold = $1, total_bill = $2, amount_received = $3,
+           payment_status = $4, payment_method = $5, sell_location = $6, profit = $7
+       WHERE id = $8 
+       RETURNING *`,
+      [quantity_sold, total_bill, received, payment_status, payment_method, sell_location, profit, id]
+    );
+
+    await client.query('COMMIT');
+    res.json(saleResult.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Update sale error:', error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+};
+
+const deleteSale = async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    const { id } = req.params;
+    const saleResult = await client.query('SELECT * FROM sales WHERE id = $1', [id]);
+
+    if (saleResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Sale not found' });
+    }
+
+    const sale = saleResult.rows[0];
+    const isNew = sale.book_condition === 'NEW';
+    const stockField = isNew ? 'available_stock_new' : 'available_stock_old';
+
+    await client.query(
+      `UPDATE book_stock SET ${stockField} = ${stockField} + $1 WHERE id = $2`,
+      [sale.quantity_sold, sale.stock_id]
+    );
+
+    await client.query('DELETE FROM sales WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Sale deleted successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Delete sale error:', error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+};
+
+// Update exports
+module.exports = { 
+  createSale, 
+  getSales,
+  updateSale,
+  deleteSale,
+  getFinanceReport
+};
