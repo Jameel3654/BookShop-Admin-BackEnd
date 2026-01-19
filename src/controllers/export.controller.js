@@ -6,8 +6,11 @@ const exportStock = async (req, res) => {
     const params = [];
     
     if (years && years !== '') {
-      const yearArray = years.split(',').filter(y => y);
-      
+      const yearArray = years
+  .split(',')
+  .map(y => parseInt(y))
+  .filter(y => !isNaN(y));
+
       // Only show books where either new or old year matches the selected years
       query = `
         SELECT 
@@ -15,33 +18,44 @@ const exportStock = async (req, res) => {
           b.name_urdu, 
           b.ssn,
           CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.year_new
-            WHEN bs.year_old = ANY($1) THEN bs.year_old
+           WHERE 
+  bs.year_new = ANY($1::int[])
+  OR bs.year_old = ANY($1::int[])
+
             ELSE NULL
           END as year,
           CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.buy_price_new
-            WHEN bs.year_old = ANY($1) THEN bs.buy_price_old
+           WHERE 
+  bs.year_new = ANY($1::int[])
+  OR bs.year_old = ANY($1::int[])
+
             ELSE NULL
           END as buy_price,
           CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.sell_price_new
-            WHEN bs.year_old = ANY($1) THEN bs.sell_price_old
+           WHERE 
+  bs.year_new = ANY($1::int[])
+  OR bs.year_old = ANY($1::int[])
             ELSE NULL
           END as sell_price,
           CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.total_stock_new
-            WHEN bs.year_old = ANY($1) THEN bs.total_stock_old
+          WHERE 
+  bs.year_new = ANY($1::int[])
+  OR bs.year_old = ANY($1::int[])
+
             ELSE NULL
           END as total_stock,
           CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.available_stock_new
-            WHEN bs.year_old = ANY($1) THEN bs.available_stock_old
+           WHERE 
+  bs.year_new = ANY($1::int[])
+  OR bs.year_old = ANY($1::int[])
+
             ELSE NULL
           END as available_stock,
           CASE 
-            WHEN bs.year_new = ANY($1) THEN 'New'
-            WHEN bs.year_old = ANY($1) THEN 'Old'
+            WHERE 
+  bs.year_new = ANY($1::int[])
+  OR bs.year_old = ANY($1::int[])
+
             ELSE NULL
           END as condition
         FROM book_stock bs
@@ -139,7 +153,11 @@ const exportSales = async (req, res) => {
     const params = [];
     
     if (years && years !== '') {
-      const yearArray = years.split(',').filter(y => y);
+     const yearArray = years
+  .split(',')
+  .map(y => parseInt(y))
+  .filter(y => !isNaN(y));
+
       
       // Only show sales where the book year matches selected years
       query = `
