@@ -59,17 +59,17 @@ const createBook = async (req, res) => {
     );
 
     const newBook = bookResult.rows[0];
-    const currentYear = new Date().getFullYear().toString();
 
+    // Create initial stock with new structure (separate years)
     await client.query(
       `INSERT INTO book_stock (
-        book_id, year, 
+        book_id, year_new, year_old,
         buy_price_new, sell_price_new, 
         buy_price_old, sell_price_old,
         total_stock_new, available_stock_new,
         total_stock_old, available_stock_old
-      ) VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0)`,
-      [newBook.id, currentYear]
+      ) VALUES ($1, '', '', 0, 0, 0, 0, 0, 0, 0, 0)`,
+      [newBook.id]
     );
 
     await client.query('COMMIT');
@@ -81,7 +81,7 @@ const createBook = async (req, res) => {
       return res.status(400).json({ message: 'Book with this SSN already exists' });
     }
     console.error('Create book error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   } finally {
     client.release();
   }

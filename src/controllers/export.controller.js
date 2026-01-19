@@ -6,7 +6,8 @@ const exportStock = async (req, res) => {
     const { years } = req.query;
     
     let query = `
-      SELECT b.name, b.name_urdu, b.ssn, bs.year,
+      SELECT b.name, b.name_urdu, b.ssn, 
+             bs.year_new, bs.year_old,
              bs.buy_price_new, bs.sell_price_new,
              bs.buy_price_old, bs.sell_price_old,
              bs.total_stock_new, bs.available_stock_new,
@@ -19,11 +20,11 @@ const exportStock = async (req, res) => {
     const params = [];
     if (years) {
       const yearArray = years.split(',');
-      query += ` WHERE bs.year = ANY($1)`;
+      query += ` WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)`;
       params.push(yearArray);
     }
     
-    query += ` ORDER BY b.name, bs.year`;
+    query += ` ORDER BY b.name`;
     
     const result = await pool.query(query, params);
     const workbook = new ExcelJS.Workbook();
@@ -33,20 +34,20 @@ const exportStock = async (req, res) => {
       { header: 'Book Name', key: 'name', width: 30 },
       { header: 'Name (Urdu)', key: 'name_urdu', width: 30 },
       { header: 'SSN', key: 'ssn', width: 15 },
-      { header: 'Year', key: 'year', width: 10 },
+      { header: 'New Year', key: 'year_new', width: 10 },
       { header: 'New Buy Price', key: 'buy_price_new', width: 15 },
       { header: 'New Sell Price', key: 'sell_price_new', width: 15 },
-      { header: 'Old Buy Price', key: 'buy_price_old', width: 15 },
-      { header: 'Old Sell Price', key: 'sell_price_old', width: 15 },
       { header: 'Total New', key: 'total_stock_new', width: 12 },
       { header: 'Available New', key: 'available_stock_new', width: 12 },
+      { header: 'Old Year', key: 'year_old', width: 10 },
+      { header: 'Old Buy Price', key: 'buy_price_old', width: 15 },
+      { header: 'Old Sell Price', key: 'sell_price_old', width: 15 },
       { header: 'Total Old', key: 'total_stock_old', width: 12 },
       { header: 'Available Old', key: 'available_stock_old', width: 12 }
     ];
 
     worksheet.addRows(result.rows);
     
-    // Add totals row
     const totalNew = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock_new || 0), 0);
     const totalOld = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock_old || 0), 0);
     

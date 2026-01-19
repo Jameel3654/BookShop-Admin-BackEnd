@@ -66,10 +66,11 @@ const getAllStock = async (req, res) => {
        JOIN books b ON bs.book_id = b.id
        ORDER BY bs.added_at DESC`
     );
+    
     res.json(result.rows);
   } catch (error) {
     console.error('Get all stock error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
