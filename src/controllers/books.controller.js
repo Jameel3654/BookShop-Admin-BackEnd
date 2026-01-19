@@ -13,7 +13,7 @@ const getPublicBooks = async (req, res) => {
         MAX(CASE WHEN bs.available_stock_new > 0 THEN bs.sell_price_new END) as max_price_new,
         MIN(CASE WHEN bs.available_stock_old > 0 THEN bs.sell_price_old END) as min_price_old,
         MAX(CASE WHEN bs.available_stock_old > 0 THEN bs.sell_price_old END) as max_price_old,
-        STRING_AGG(DISTINCT bs.year, ', ' ORDER BY bs.year DESC) as available_years
+        STRING_AGG(DISTINCT COALESCE(bs.year_new, bs.year_old), ', ') as available_years
       FROM books b
       LEFT JOIN book_stock bs ON b.id = bs.book_id
       WHERE b.is_visible = true
@@ -36,7 +36,7 @@ const getPublicBooks = async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Get public books error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
