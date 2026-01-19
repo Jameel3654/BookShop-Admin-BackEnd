@@ -113,11 +113,18 @@ const exportStock = async (req, res) => {
       available_stock: totalRemaining
     });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=stock.xlsx');
+    res.setHeader(
+  'Content-Type',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+);
+res.setHeader(
+  'Content-Disposition',
+  'attachment; filename="stock.xlsx"'
+);
 
-    await workbook.xlsx.write(res);
-    res.end();
+const buffer = await workbook.xlsx.writeBuffer();
+res.send(buffer);
+
   } catch (error) {
     console.error('Export stock error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -238,11 +245,18 @@ const exportSales = async (req, res) => {
     worksheet.addRow({ name: 'Additional Expense:', total_bill: additionalExpense });
     worksheet.addRow({ name: 'NET TOTAL:', total_bill: totalSales + additionalIncome - additionalExpense });
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=sales.xlsx');
+   res.setHeader(
+  'Content-Type',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+);
+res.setHeader(
+  'Content-Disposition',
+  'attachment; filename="sales.xlsx"'
+);
 
-    await workbook.xlsx.write(res);
-    res.end();
+const buffer = await workbook.xlsx.writeBuffer();
+res.send(buffer);
+
   } catch (error) {
     console.error('Export sales error:', error);
     res.status(500).json({ message: 'Server error' });
