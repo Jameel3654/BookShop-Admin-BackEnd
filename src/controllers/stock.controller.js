@@ -77,7 +77,10 @@ const getAllStock = async (req, res) => {
 const getStockYears = async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT DISTINCT year FROM book_stock ORDER BY year DESC'
+      `SELECT DISTINCT year_new as year FROM book_stock WHERE year_new IS NOT NULL AND year_new != ''
+       UNION
+       SELECT DISTINCT year_old as year FROM book_stock WHERE year_old IS NOT NULL AND year_old != ''
+       ORDER BY year DESC`
     );
     res.json(result.rows.map(r => r.year));
   } catch (error) {

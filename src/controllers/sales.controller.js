@@ -75,10 +75,13 @@ const createSale = async (req, res) => {
 
 const getSales = async (req, res) => {
   try {
-    const { years } = req.query; // Can be comma-separated: "2024,2025"
+    const { years } = req.query;
     
     let query = `
-      SELECT s.*, bs.year, b.name as book_name, b.name_urdu, b.ssn
+      SELECT s.*, 
+             bs.year_new, bs.year_old,
+             bs.sell_price_new, bs.sell_price_old,
+             b.name as book_name, b.name_urdu, b.ssn
       FROM sales s
       JOIN book_stock bs ON s.stock_id = bs.id
       JOIN books b ON bs.book_id = b.id
@@ -87,7 +90,7 @@ const getSales = async (req, res) => {
     const params = [];
     if (years) {
       const yearArray = years.split(',');
-      query += ` WHERE bs.year = ANY($1)`;
+      query += ` WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)`;
       params.push(yearArray);
     }
     
@@ -97,7 +100,7 @@ const getSales = async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Get sales error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 const getFinanceReport = async (req, res) => {

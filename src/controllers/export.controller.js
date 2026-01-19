@@ -74,10 +74,13 @@ const exportSales = async (req, res) => {
     const { years } = req.query;
     
     let query = `
-      SELECT b.name, b.name_urdu, b.ssn, bs.year, 
-             s.book_condition, s.quantity_sold, s.unit_price,
-             s.total_bill, s.amount_received, s.payment_status,
-             s.payment_method, s.sell_location, s.profit, s.sold_at
+      SELECT b.name, b.name_urdu, b.ssn, 
+             bs.year_new, bs.year_old,
+             s.book_condition,
+             s.quantity_sold, s.unit_price,
+             s.total_bill, s.amount_received, 
+             s.payment_status, s.payment_method, 
+             s.sell_location, s.profit, s.sold_at
       FROM sales s
       JOIN book_stock bs ON s.stock_id = bs.id
       JOIN books b ON bs.book_id = b.id
@@ -86,7 +89,7 @@ const exportSales = async (req, res) => {
     const params = [];
     if (years) {
       const yearArray = years.split(',');
-      query += ` WHERE bs.year = ANY($1)`;
+      query += ` WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)`;
       params.push(yearArray);
     }
     
@@ -94,7 +97,6 @@ const exportSales = async (req, res) => {
     
     const result = await pool.query(query, params);
     
-    // Get additional money
     const moneyResult = await pool.query(
       'SELECT * FROM additional_money ORDER BY added_at DESC'
     );
@@ -106,20 +108,22 @@ const exportSales = async (req, res) => {
       { header: 'Book Name', key: 'name', width: 30 },
       { header: 'Name (Urdu)', key: 'name_urdu', width: 30 },
       { header: 'SSN', key: 'ssn', width: 15 },
-      { header: 'Year', key: 'year', width: 10 },
+      { header: 'New Year', key: 'year_new', width: 10 },
+      { header: 'Old Year', key: 'year_old', width: 10 },
       { header: 'Condition', key: 'book_condition', width: 10 },
       { header: 'Quantity', key: 'quantity_sold', width: 10 },
       { header: 'Unit Price', key: 'unit_price', width: 12 },
       { header: 'Total Bill', key: 'total_bill', width: 12 },
       { header: 'Received', key: 'amount_received', width: 12 },
       { header: 'Status', key: 'payment_status', width: 12 },
+      { header: 'Method', key: 'payment_method', width: 12 },
+      { header: 'Location', key: 'sell_location', width: 20 },
       { header: 'Profit', key: 'profit', width: 12 },
       { header: 'Date', key: 'sold_at', width: 20 }
     ];
 
     worksheet.addRows(result.rows);
     
-    // Add summary
     const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.total_bill), 0);
     const totalProfit = result.rows.reduce((sum, row) => sum + parseFloat(row.profit), 0);
     const additionalIncome = moneyResult.rows
