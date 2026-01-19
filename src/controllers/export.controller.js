@@ -1,30 +1,91 @@
-const ExcelJS = require('exceljs');
-const pool = require('../config/db');
-
 const exportStock = async (req, res) => {
   try {
     const { years } = req.query;
     
-    let query = `
-      SELECT b.name, b.name_urdu, b.ssn, 
-             bs.year_new, bs.year_old,
-             bs.buy_price_new, bs.sell_price_new,
-             bs.buy_price_old, bs.sell_price_old,
-             bs.total_stock_new, bs.available_stock_new,
-             bs.total_stock_old, bs.available_stock_old,
-             bs.added_at
-      FROM book_stock bs
-      JOIN books b ON bs.book_id = b.id
-    `;
-    
+    let query;
     const params = [];
-    if (years) {
-      const yearArray = years.split(',');
-      query += ` WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)`;
-      params.push(yearArray);
-    }
     
-    query += ` ORDER BY b.name`;
+    if (years && years !== '') {
+      const yearArray = years.split(',').filter(y => y);
+      
+      // Only show books where either new or old year matches the selected years
+      query = `
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          CASE 
+            WHEN bs.year_new = ANY($1) THEN bs.year_new
+            WHEN bs.year_old = ANY($1) THEN bs.year_old
+            ELSE NULL
+          END as year,
+          CASE 
+            WHEN bs.year_new = ANY($1) THEN bs.buy_price_new
+            WHEN bs.year_old = ANY($1) THEN bs.buy_price_old
+            ELSE NULL
+          END as buy_price,
+          CASE 
+            WHEN bs.year_new = ANY($1) THEN bs.sell_price_new
+            WHEN bs.year_old = ANY($1) THEN bs.sell_price_old
+            ELSE NULL
+          END as sell_price,
+          CASE 
+            WHEN bs.year_new = ANY($1) THEN bs.total_stock_new
+            WHEN bs.year_old = ANY($1) THEN bs.total_stock_old
+            ELSE NULL
+          END as total_stock,
+          CASE 
+            WHEN bs.year_new = ANY($1) THEN bs.available_stock_new
+            WHEN bs.year_old = ANY($1) THEN bs.available_stock_old
+            ELSE NULL
+          END as available_stock,
+          CASE 
+            WHEN bs.year_new = ANY($1) THEN 'New'
+            WHEN bs.year_old = ANY($1) THEN 'Old'
+            ELSE NULL
+          END as condition
+        FROM book_stock bs
+        JOIN books b ON bs.book_id = b.id
+        WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)
+        ORDER BY b.name, year
+      `;
+      params.push(yearArray);
+    } else {
+      // Show all - both new and old as separate rows
+      query = `
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          bs.year_new as year,
+          bs.buy_price_new as buy_price,
+          bs.sell_price_new as sell_price,
+          bs.total_stock_new as total_stock,
+          bs.available_stock_new as available_stock,
+          'New' as condition
+        FROM book_stock bs
+        JOIN books b ON bs.book_id = b.id
+        WHERE bs.year_new IS NOT NULL AND bs.year_new != ''
+        
+        UNION ALL
+        
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          bs.year_old as year,
+          bs.buy_price_old as buy_price,
+          bs.sell_price_old as sell_price,
+          bs.total_stock_old as total_stock,
+          bs.available_stock_old as available_stock,
+          'Old' as condition
+        FROM book_stock bs
+        JOIN books b ON bs.book_id = b.id
+        WHERE bs.year_old IS NOT NULL AND bs.year_old != ''
+        
+        ORDER BY name, year DESC
+      `;
+    }
     
     const result = await pool.query(query, params);
     const workbook = new ExcelJS.Workbook();
@@ -34,28 +95,22 @@ const exportStock = async (req, res) => {
       { header: 'Book Name', key: 'name', width: 30 },
       { header: 'Name (Urdu)', key: 'name_urdu', width: 30 },
       { header: 'SSN', key: 'ssn', width: 15 },
-      { header: 'New Year', key: 'year_new', width: 10 },
-      { header: 'New Buy Price', key: 'buy_price_new', width: 15 },
-      { header: 'New Sell Price', key: 'sell_price_new', width: 15 },
-      { header: 'Total New', key: 'total_stock_new', width: 12 },
-      { header: 'Available New', key: 'available_stock_new', width: 12 },
-      { header: 'Old Year', key: 'year_old', width: 10 },
-      { header: 'Old Buy Price', key: 'buy_price_old', width: 15 },
-      { header: 'Old Sell Price', key: 'sell_price_old', width: 15 },
-      { header: 'Total Old', key: 'total_stock_old', width: 12 },
-      { header: 'Available Old', key: 'available_stock_old', width: 12 }
+      { header: 'Year', key: 'year', width: 10 },
+      { header: 'Condition', key: 'condition', width: 10 },
+      { header: 'Buy Price', key: 'buy_price', width: 15 },
+      { header: 'Sell Price', key: 'sell_price', width: 15 },
+      { header: 'Total Stock', key: 'total_stock', width: 12 },
+      { header: 'Available', key: 'available_stock', width: 12 }
     ];
 
     worksheet.addRows(result.rows);
     
-    const totalNew = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock_new || 0), 0);
-    const totalOld = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock_old || 0), 0);
+    const totalRemaining = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock || 0), 0);
     
     worksheet.addRow({});
     worksheet.addRow({
       name: 'TOTAL BOOKS REMAINING:',
-      available_stock_new: totalNew,
-      available_stock_old: totalOld
+      available_stock: totalRemaining
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -73,27 +128,70 @@ const exportSales = async (req, res) => {
   try {
     const { years } = req.query;
     
-    let query = `
-      SELECT b.name, b.name_urdu, b.ssn, 
-             bs.year_new, bs.year_old,
-             s.book_condition,
-             s.quantity_sold, s.unit_price,
-             s.total_bill, s.amount_received, 
-             s.payment_status, s.payment_method, 
-             s.sell_location, s.profit, s.sold_at
-      FROM sales s
-      JOIN book_stock bs ON s.stock_id = bs.id
-      JOIN books b ON bs.book_id = b.id
-    `;
-    
+    let query;
     const params = [];
-    if (years) {
-      const yearArray = years.split(',');
-      query += ` WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)`;
-      params.push(yearArray);
-    }
     
-    query += ` ORDER BY s.sold_at DESC`;
+    if (years && years !== '') {
+      const yearArray = years.split(',').filter(y => y);
+      
+      // Only show sales where the book year matches selected years
+      query = `
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          CASE 
+            WHEN s.book_condition = 'NEW' THEN bs.year_new
+            WHEN s.book_condition = 'OLD' THEN bs.year_old
+          END as year,
+          s.book_condition,
+          s.quantity_sold, 
+          s.unit_price,
+          s.total_bill, 
+          s.amount_received, 
+          s.payment_status, 
+          s.payment_method, 
+          s.sell_location, 
+          s.profit, 
+          s.sold_at
+        FROM sales s
+        JOIN book_stock bs ON s.stock_id = bs.id
+        JOIN books b ON bs.book_id = b.id
+        WHERE (
+          (s.book_condition = 'NEW' AND bs.year_new = ANY($1))
+          OR 
+          (s.book_condition = 'OLD' AND bs.year_old = ANY($1))
+        )
+        ORDER BY s.sold_at DESC
+      `;
+      params.push(yearArray);
+    } else {
+      // Show all sales
+      query = `
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          CASE 
+            WHEN s.book_condition = 'NEW' THEN bs.year_new
+            WHEN s.book_condition = 'OLD' THEN bs.year_old
+          END as year,
+          s.book_condition,
+          s.quantity_sold, 
+          s.unit_price,
+          s.total_bill, 
+          s.amount_received, 
+          s.payment_status, 
+          s.payment_method, 
+          s.sell_location, 
+          s.profit, 
+          s.sold_at
+        FROM sales s
+        JOIN book_stock bs ON s.stock_id = bs.id
+        JOIN books b ON bs.book_id = b.id
+        ORDER BY s.sold_at DESC
+      `;
+    }
     
     const result = await pool.query(query, params);
     
@@ -108,8 +206,7 @@ const exportSales = async (req, res) => {
       { header: 'Book Name', key: 'name', width: 30 },
       { header: 'Name (Urdu)', key: 'name_urdu', width: 30 },
       { header: 'SSN', key: 'ssn', width: 15 },
-      { header: 'New Year', key: 'year_new', width: 10 },
-      { header: 'Old Year', key: 'year_old', width: 10 },
+      { header: 'Year', key: 'year', width: 10 },
       { header: 'Condition', key: 'book_condition', width: 10 },
       { header: 'Quantity', key: 'quantity_sold', width: 10 },
       { header: 'Unit Price', key: 'unit_price', width: 12 },
