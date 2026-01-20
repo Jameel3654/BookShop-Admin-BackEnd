@@ -1,3 +1,6 @@
+const ExcelJS = require('exceljs');
+const pool = require('../config/db');
+
 const exportStock = async (req, res) => {
   try {
     const { years } = req.query;
@@ -8,64 +11,21 @@ const exportStock = async (req, res) => {
     if (years && years !== '') {
       const yearArray = years.split(',').filter(y => y);
       
-      // Only show books where either new or old year matches the selected years
-      query = `
-        SELECT 
-          b.name, 
-          b.name_urdu, 
-          b.ssn,
-          CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.year_new
-            WHEN bs.year_old = ANY($1) THEN bs.year_old
-            ELSE NULL
-          END as year,
-          CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.buy_price_new
-            WHEN bs.year_old = ANY($1) THEN bs.buy_price_old
-            ELSE NULL
-          END as buy_price,
-          CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.sell_price_new
-            WHEN bs.year_old = ANY($1) THEN bs.sell_price_old
-            ELSE NULL
-          END as sell_price,
-          CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.total_stock_new
-            WHEN bs.year_old = ANY($1) THEN bs.total_stock_old
-            ELSE NULL
-          END as total_stock,
-          CASE 
-            WHEN bs.year_new = ANY($1) THEN bs.available_stock_new
-            WHEN bs.year_old = ANY($1) THEN bs.available_stock_old
-            ELSE NULL
-          END as available_stock,
-          CASE 
-            WHEN bs.year_new = ANY($1) THEN 'New'
-            WHEN bs.year_old = ANY($1) THEN 'Old'
-            ELSE NULL
-          END as condition
-        FROM book_stock bs
-        JOIN books b ON bs.book_id = b.id
-        WHERE bs.year_new = ANY($1) OR bs.year_old = ANY($1)
-        ORDER BY b.name, year
-      `;
-      params.push(yearArray);
-    } else {
-      // Show all - both new and old as separate rows
+      // Split into separate queries for NEW and OLD, then combine
       query = `
         SELECT 
           b.name, 
           b.name_urdu, 
           b.ssn,
           bs.year_new as year,
+          'New' as condition,
           bs.buy_price_new as buy_price,
           bs.sell_price_new as sell_price,
           bs.total_stock_new as total_stock,
-          bs.available_stock_new as available_stock,
-          'New' as condition
+          bs.available_stock_new as available_stock
         FROM book_stock bs
         JOIN books b ON bs.book_id = b.id
-        WHERE bs.year_new IS NOT NULL AND bs.year_new != ''
+        WHERE bs.year_new = ANY($1) AND bs.available_stock_new > 0
         
         UNION ALL
         
@@ -74,14 +34,50 @@ const exportStock = async (req, res) => {
           b.name_urdu, 
           b.ssn,
           bs.year_old as year,
+          'Old' as condition,
           bs.buy_price_old as buy_price,
           bs.sell_price_old as sell_price,
           bs.total_stock_old as total_stock,
-          bs.available_stock_old as available_stock,
-          'Old' as condition
+          bs.available_stock_old as available_stock
         FROM book_stock bs
         JOIN books b ON bs.book_id = b.id
-        WHERE bs.year_old IS NOT NULL AND bs.year_old != ''
+        WHERE bs.year_old = ANY($1) AND bs.available_stock_old > 0
+        
+        ORDER BY name, year DESC
+      `;
+      params.push(yearArray);
+    } else {
+      // Show all
+      query = `
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          bs.year_new as year,
+          'New' as condition,
+          bs.buy_price_new as buy_price,
+          bs.sell_price_new as sell_price,
+          bs.total_stock_new as total_stock,
+          bs.available_stock_new as available_stock
+        FROM book_stock bs
+        JOIN books b ON bs.book_id = b.id
+        WHERE bs.year_new IS NOT NULL AND bs.year_new != '' AND bs.available_stock_new > 0
+        
+        UNION ALL
+        
+        SELECT 
+          b.name, 
+          b.name_urdu, 
+          b.ssn,
+          bs.year_old as year,
+          'Old' as condition,
+          bs.buy_price_old as buy_price,
+          bs.sell_price_old as sell_price,
+          bs.total_stock_old as total_stock,
+          bs.available_stock_old as available_stock
+        FROM book_stock bs
+        JOIN books b ON bs.book_id = b.id
+        WHERE bs.year_old IS NOT NULL AND bs.year_old != '' AND bs.available_stock_old > 0
         
         ORDER BY name, year DESC
       `;
@@ -120,7 +116,7 @@ const exportStock = async (req, res) => {
     res.end();
   } catch (error) {
     console.error('Export stock error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -134,7 +130,6 @@ const exportSales = async (req, res) => {
     if (years && years !== '') {
       const yearArray = years.split(',').filter(y => y);
       
-      // Only show sales where the book year matches selected years
       query = `
         SELECT 
           b.name, 
@@ -142,7 +137,7 @@ const exportSales = async (req, res) => {
           b.ssn,
           CASE 
             WHEN s.book_condition = 'NEW' THEN bs.year_new
-            WHEN s.book_condition = 'OLD' THEN bs.year_old
+            ELSE bs.year_old
           END as year,
           s.book_condition,
           s.quantity_sold, 
@@ -166,7 +161,6 @@ const exportSales = async (req, res) => {
       `;
       params.push(yearArray);
     } else {
-      // Show all sales
       query = `
         SELECT 
           b.name, 
@@ -174,7 +168,7 @@ const exportSales = async (req, res) => {
           b.ssn,
           CASE 
             WHEN s.book_condition = 'NEW' THEN bs.year_new
-            WHEN s.book_condition = 'OLD' THEN bs.year_old
+            ELSE bs.year_old
           END as year,
           s.book_condition,
           s.quantity_sold, 
@@ -221,22 +215,22 @@ const exportSales = async (req, res) => {
 
     worksheet.addRows(result.rows);
     
-    const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.total_bill), 0);
-    const totalProfit = result.rows.reduce((sum, row) => sum + parseFloat(row.profit), 0);
+    const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.total_bill || 0), 0);
+    const totalProfit = result.rows.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0);
     const additionalIncome = moneyResult.rows
       .filter(m => m.type === 'INCOME')
-      .reduce((sum, row) => sum + parseFloat(row.amount), 0);
+      .reduce((sum, row) => sum + parseFloat(row.amount || 0), 0);
     const additionalExpense = moneyResult.rows
       .filter(m => m.type === 'EXPENSE')
-      .reduce((sum, row) => sum + parseFloat(row.amount), 0);
+      .reduce((sum, row) => sum + parseFloat(row.amount || 0), 0);
     
     worksheet.addRow({});
     worksheet.addRow({ name: 'SALES SUMMARY' });
-    worksheet.addRow({ name: 'Total Sales:', total_bill: totalSales });
-    worksheet.addRow({ name: 'Total Profit:', total_bill: totalProfit });
-    worksheet.addRow({ name: 'Additional Income:', total_bill: additionalIncome });
-    worksheet.addRow({ name: 'Additional Expense:', total_bill: additionalExpense });
-    worksheet.addRow({ name: 'NET TOTAL:', total_bill: totalSales + additionalIncome - additionalExpense });
+    worksheet.addRow({ name: 'Total Sales:', total_bill: totalSales.toFixed(2) });
+    worksheet.addRow({ name: 'Total Profit:', total_bill: totalProfit.toFixed(2) });
+    worksheet.addRow({ name: 'Additional Income:', total_bill: additionalIncome.toFixed(2) });
+    worksheet.addRow({ name: 'Additional Expense:', total_bill: additionalExpense.toFixed(2) });
+    worksheet.addRow({ name: 'NET TOTAL:', total_bill: (totalSales + additionalIncome - additionalExpense).toFixed(2) });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=sales.xlsx');
@@ -245,7 +239,7 @@ const exportSales = async (req, res) => {
     res.end();
   } catch (error) {
     console.error('Export sales error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
