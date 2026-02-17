@@ -215,7 +215,7 @@ const exportSales = async (req, res) => {
 
     worksheet.addRows(result.rows);
     
-    const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.total_bill || 0), 0);
+    const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0);
     const totalProfit = result.rows.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0);
     const additionalIncome = moneyResult.rows
       .filter(m => m.type === 'INCOME')
