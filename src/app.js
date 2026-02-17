@@ -9,13 +9,26 @@ const exportRoutes = require('./routes/export.routes');
 
 const app = express();
 
+// CORS configuration: allow requests from known frontends or, as a fallback,
+// allow any origin (useful for cross-deployed FE/BE during development).
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5000',
+  'http://localhost:3001',
+  'https://markaz-maktaba.netlify.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:5000',
-    'http://localhost:3001',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
+  origin: (origin, callback) => {
+    // If no origin (e.g. curl, server-to-server), allow the request.
+    if (!origin) return callback(null, true);
+    // Allow if origin is in the allow-list.
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Fallback: allow by default to prevent CORS errors across deployments.
+    // For stricter control, replace the next line with: callback(new Error('Not allowed by CORS'))
+    return callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
