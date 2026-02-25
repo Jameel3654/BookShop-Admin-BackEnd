@@ -215,6 +215,22 @@ const exportSales = async (req, res) => {
 
     worksheet.addRows(result.rows);
     
+     // Add yellow background to rows where amount_received is 0
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) { // Skip header row
+        const amountReceived = parseFloat(row.getCell('amount_received').value || 0);
+        if (amountReceived === 0) {
+          row.eachCell((cell) => {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFFF00' } // Yellow background
+            };
+          });
+        }
+      }
+    });
+    
     const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0);
     const totalProfit = result.rows.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0);
     const additionalIncome = moneyResult.rows
