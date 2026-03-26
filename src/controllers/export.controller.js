@@ -101,12 +101,23 @@ const exportStock = async (req, res) => {
 
     worksheet.addRows(result.rows);
     
+    // Calculate totals
     const totalRemaining = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock || 0), 0);
+    const totalValue = result.rows.reduce((sum, row) => {
+      const stock = parseInt(row.available_stock || 0);
+      const price = parseFloat(row.sell_price || 0);
+      return sum + (stock * price);
+    }, 0);
     
+    // Add summary rows
     worksheet.addRow({});
     worksheet.addRow({
       name: 'TOTAL BOOKS REMAINING:',
       available_stock: totalRemaining
+    });
+    worksheet.addRow({
+      name: 'TOTAL VALUE (at selling price):',
+      available_stock: `Rs. ${totalValue.toFixed(2)}`
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -215,7 +226,7 @@ const exportSales = async (req, res) => {
 
     worksheet.addRows(result.rows);
     
-     // Add yellow background to rows where amount_received is 0
+    // Add yellow background to rows where amount_received is 0
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) { // Skip header row
         const amountReceived = parseFloat(row.getCell('amount_received').value || 0);
