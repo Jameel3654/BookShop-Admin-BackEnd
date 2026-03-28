@@ -11,12 +11,12 @@ const exportStock = async (req, res) => {
     if (years && years !== '') {
       const yearArray = years.split(',').filter(y => y);
       
-      // Split into separate queries for NEW and OLD, then combine
       query = `
         SELECT 
           b.name, 
           b.name_urdu, 
           b.ssn,
+          b.is_red,
           bs.year_new as year,
           'New' as condition,
           bs.buy_price_new as buy_price,
@@ -33,6 +33,7 @@ const exportStock = async (req, res) => {
           b.name, 
           b.name_urdu, 
           b.ssn,
+          b.is_red,
           bs.year_old as year,
           'Old' as condition,
           bs.buy_price_old as buy_price,
@@ -47,12 +48,12 @@ const exportStock = async (req, res) => {
       `;
       params.push(yearArray);
     } else {
-      // Show all
       query = `
         SELECT 
           b.name, 
           b.name_urdu, 
           b.ssn,
+          b.is_red,
           bs.year_new as year,
           'New' as condition,
           bs.buy_price_new as buy_price,
@@ -69,6 +70,7 @@ const exportStock = async (req, res) => {
           b.name, 
           b.name_urdu, 
           b.ssn,
+          b.is_red,
           bs.year_old as year,
           'Old' as condition,
           bs.buy_price_old as buy_price,
@@ -84,6 +86,11 @@ const exportStock = async (req, res) => {
     }
     
     const result = await pool.query(query, params);
+    
+    // Separate red and normal books
+    const normalBooks = result.rows.filter(row => !row.is_red);
+    const redBooks = result.rows.filter(row => row.is_red);
+    
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Stock');
 
@@ -99,25 +106,83 @@ const exportStock = async (req, res) => {
       { header: 'Available', key: 'available_stock', width: 12 }
     ];
 
-    worksheet.addRows(result.rows);
+    // Add normal books
+    worksheet.addRows(normalBooks);
     
-    // Calculate totals
-    const totalRemaining = result.rows.reduce((sum, row) => sum + parseInt(row.available_stock || 0), 0);
-    const totalValue = result.rows.reduce((sum, row) => {
+    const normalTotal = normalBooks.reduce((sum, row) => sum + parseInt(row.available_stock || 0), 0);
+    const normalValue = normalBooks.reduce((sum, row) => {
       const stock = parseInt(row.available_stock || 0);
       const price = parseFloat(row.sell_price || 0);
       return sum + (stock * price);
     }, 0);
     
-    // Add summary rows
     worksheet.addRow({});
     worksheet.addRow({
-      name: 'TOTAL BOOKS REMAINING:',
-      available_stock: totalRemaining
+      name: 'NORMAL BOOKS - TOTAL REMAINING:',
+      available_stock: normalTotal
     });
     worksheet.addRow({
-      name: 'TOTAL VALUE (at selling price):',
-      available_stock: `Rs. ${totalValue.toFixed(2)}`
+      name: 'NORMAL BOOKS - TOTAL VALUE:',
+      available_stock: `Rs. ${normalValue.toFixed(2)}`
+    });
+    
+    // Add red books section
+    if (redBooks.length > 0) {
+      worksheet.addRow({});
+      worksheet.addRow({});
+      worksheet.addRow({ name: '=== RED BOOKS (NOT ORDERED) ===' });
+      worksheet.addRow({});
+      
+      const redStartRow = worksheet.lastRow.number + 1;
+      worksheet.addRows(redBooks);
+      
+      // Color red book rows
+      for (let i = redStartRow; i <= worksheet.lastRow.number; i++) {
+        worksheet.getRow(i).eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFF0000' } // Red background
+          };
+          cell.font = { color: { argb: 'FFFFFFFF' } }; // White text
+        });
+      }
+      
+      const redTotal = redBooks.reduce((sum, row) => sum + parseInt(row.available_stock || 0), 0);
+      const redValue = redBooks.reduce((sum, row) => {
+        const stock = parseInt(row.available_stock || 0);
+        const price = parseFloat(row.sell_price || 0);
+        return sum + (stock * price);
+      }, 0);
+      
+      worksheet.addRow({});
+      worksheet.addRow({
+        name: 'RED BOOKS - TOTAL REMAINING:',
+        available_stock: redTotal
+      });
+      worksheet.addRow({
+        name: 'RED BOOKS - TOTAL VALUE:',
+        available_stock: `Rs. ${redValue.toFixed(2)}`
+      });
+    }
+    
+    // Grand total
+    const grandTotal = normalTotal + (redBooks.length > 0 ? redBooks.reduce((sum, row) => sum + parseInt(row.available_stock || 0), 0) : 0);
+    const grandValue = normalValue + (redBooks.length > 0 ? redBooks.reduce((sum, row) => {
+      const stock = parseInt(row.available_stock || 0);
+      const price = parseFloat(row.sell_price || 0);
+      return sum + (stock * price);
+    }, 0) : 0);
+    
+    worksheet.addRow({});
+    worksheet.addRow({});
+    worksheet.addRow({
+      name: 'GRAND TOTAL - ALL BOOKS:',
+      available_stock: grandTotal
+    });
+    worksheet.addRow({
+      name: 'GRAND TOTAL - ALL VALUE:',
+      available_stock: `Rs. ${grandValue.toFixed(2)}`
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -146,6 +211,7 @@ const exportSales = async (req, res) => {
           b.name, 
           b.name_urdu, 
           b.ssn,
+          b.is_red,
           CASE 
             WHEN s.book_condition = 'NEW' THEN bs.year_new
             ELSE bs.year_old
@@ -177,6 +243,7 @@ const exportSales = async (req, res) => {
           b.name, 
           b.name_urdu, 
           b.ssn,
+          b.is_red,
           CASE 
             WHEN s.book_condition = 'NEW' THEN bs.year_new
             ELSE bs.year_old
@@ -204,6 +271,10 @@ const exportSales = async (req, res) => {
       'SELECT * FROM additional_money ORDER BY added_at DESC'
     );
 
+    // Separate red and normal sales
+    const normalSales = result.rows.filter(row => !row.is_red);
+    const redSales = result.rows.filter(row => row.is_red);
+
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Sales');
 
@@ -224,26 +295,28 @@ const exportSales = async (req, res) => {
       { header: 'Date', key: 'sold_at', width: 20 }
     ];
 
-    worksheet.addRows(result.rows);
+    // Add normal sales
+    worksheet.addRows(normalSales);
     
-    // Add yellow background to rows where amount_received is 0
+    // Yellow background for zero sales in normal section
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber > 1) { // Skip header row
+      if (rowNumber > 1 && rowNumber <= normalSales.length + 1) {
         const amountReceived = parseFloat(row.getCell('amount_received').value || 0);
         if (amountReceived === 0) {
           row.eachCell((cell) => {
             cell.fill = {
               type: 'pattern',
               pattern: 'solid',
-              fgColor: { argb: 'FFFFFF00' } // Yellow background
+              fgColor: { argb: 'FFFFFF00' }
             };
           });
         }
       }
     });
     
-    const totalSales = result.rows.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0);
-    const totalProfit = result.rows.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0);
+    const normalTotalSales = normalSales.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0);
+    const normalTotalProfit = normalSales.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0);
+    
     const additionalIncome = moneyResult.rows
       .filter(m => m.type === 'INCOME')
       .reduce((sum, row) => sum + parseFloat(row.amount || 0), 0);
@@ -252,12 +325,62 @@ const exportSales = async (req, res) => {
       .reduce((sum, row) => sum + parseFloat(row.amount || 0), 0);
     
     worksheet.addRow({});
-    worksheet.addRow({ name: 'SALES SUMMARY' });
-    worksheet.addRow({ name: 'Total Sales:', total_bill: totalSales.toFixed(2) });
-    worksheet.addRow({ name: 'Total Profit:', total_bill: totalProfit.toFixed(2) });
+    worksheet.addRow({ name: 'NORMAL BOOKS SALES SUMMARY' });
+    worksheet.addRow({ name: 'Total Sales:', total_bill: normalTotalSales.toFixed(2) });
+    worksheet.addRow({ name: 'Total Profit:', total_bill: normalTotalProfit.toFixed(2) });
+    
+    // Add red sales section
+    if (redSales.length > 0) {
+      worksheet.addRow({});
+      worksheet.addRow({});
+      worksheet.addRow({ name: '=== RED BOOKS SALES (NOT ORDERED) ===' });
+      worksheet.addRow({});
+      
+      const redStartRow = worksheet.lastRow.number + 1;
+      worksheet.addRows(redSales);
+      
+      // Color red book rows
+      for (let i = redStartRow; i <= worksheet.lastRow.number; i++) {
+        const row = worksheet.getRow(i);
+        const amountReceived = parseFloat(row.getCell('amount_received').value || 0);
+        
+        row.eachCell((cell) => {
+          if (amountReceived === 0) {
+            // Yellow for zero sales even in red section
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFFF00' }
+            };
+          } else {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFF0000' }
+            };
+            cell.font = { color: { argb: 'FFFFFFFF' } };
+          }
+        });
+      }
+      
+      const redTotalSales = redSales.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0);
+      const redTotalProfit = redSales.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0);
+      
+      worksheet.addRow({});
+      worksheet.addRow({ name: 'RED BOOKS SALES SUMMARY' });
+      worksheet.addRow({ name: 'Total Sales:', total_bill: redTotalSales.toFixed(2) });
+      worksheet.addRow({ name: 'Total Profit:', total_bill: redTotalProfit.toFixed(2) });
+    }
+    
+    // Grand totals
+    worksheet.addRow({});
+    worksheet.addRow({});
+    worksheet.addRow({ name: 'OVERALL SUMMARY' });
+    worksheet.addRow({ name: 'Total Sales (All Books):', total_bill: result.rows.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0).toFixed(2) });
+    worksheet.addRow({ name: 'Total Profit (All Books):', total_bill: result.rows.reduce((sum, row) => sum + parseFloat(row.profit || 0), 0).toFixed(2) });
     worksheet.addRow({ name: 'Additional Income:', total_bill: additionalIncome.toFixed(2) });
     worksheet.addRow({ name: 'Additional Expense:', total_bill: additionalExpense.toFixed(2) });
-    worksheet.addRow({ name: 'NET TOTAL:', total_bill: (totalSales + additionalIncome - additionalExpense).toFixed(2) });
+    worksheet.addRow({ name: 'NET TOTAL:', total_bill: (result.rows.reduce((sum, row) => sum + parseFloat(row.amount_received || 0), 0) + additionalIncome - additionalExpense).toFixed(2) });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=sales.xlsx');
